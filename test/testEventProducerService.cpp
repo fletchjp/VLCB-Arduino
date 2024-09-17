@@ -393,7 +393,7 @@ void testShortRequestStatusWithDifferentNN()
   assertEquals(0xFF, capturedIndex);
 }
 
-void testLongSendRequestResponse()
+void testLongSendEventResponse()
 {
   test();
   capturedIndex = 0xFF;
@@ -411,7 +411,7 @@ void testLongSendRequestResponse()
   configuration->writeEvent(1, eventData);
   configuration->updateEvHashEntry(1);
 
-  eventProducerService->sendRequestResponse(true, 1);
+  eventProducerService->sendEventResponse(true, 1);
 
   process(controller);
 
@@ -426,7 +426,7 @@ void testLongSendRequestResponse()
   assertEquals(0x01, mockTransportService->sent_messages[0].data[4]);
 }
 
-void testShortSendRequestResponse()
+void testShortSendEventResponse()
 {
   test();
   capturedIndex = 0xFF;
@@ -444,7 +444,7 @@ void testShortSendRequestResponse()
   configuration->writeEvent(1, eventData);
   configuration->updateEvHashEntry(1);
 
-  eventProducerService->sendRequestResponse(false, 1);
+  eventProducerService->sendEventResponse(false, 1);
 
   process(controller);
 
@@ -476,6 +476,6 @@ void testEventProducerService()
   testShortRequestStatusWithNN();
   testShortRequestStatusWithoutNN();
   testShortRequestStatusWithDifferentNN();
-  testLongSendRequestResponse();
-  testShortSendRequestResponse();
+  testLongSendEventResponse();
+  testShortSendEventResponse();
 }

@@ -90,7 +90,7 @@ void MinimumNodeService::checkModeChangeTimeout()
   if (instantMode == MODE_SETUP && ((millis() - timeOutTimer) >= 30000)) 
   {
     // Revert to previous mode.
-    // DEBUG_SERIAL << F("> timeout expired, currentMode = ") << currentMode << F(", mode change = ") << bModeSetup << endl;
+    // DEBUG_SERIAL << F("> timeout expired, currentMode = ") << instantMode << F(", saved mode = ") << module_config->currentMode << endl;
     instantMode = module_config->currentMode;
     controller->indicateMode(instantMode);
 
@@ -497,14 +497,8 @@ void MinimumNodeService::handleModeMessage(const VlcbMessage *msg, unsigned int 
       break;
 
     case MODE_HEARTBEAT_ON:
-      // Turn on Heartbeat
-      noHeartbeat = false;
-      module_config->setHeartbeat(!noHeartbeat);
-      break;
-
     case MODE_HEARTBEAT_OFF:
-      // Turn off Heartbeat
-      noHeartbeat = true;
+      noHeartbeat = (requestedMode == MODE_HEARTBEAT_OFF);
       module_config->setHeartbeat(!noHeartbeat);
       break;
       

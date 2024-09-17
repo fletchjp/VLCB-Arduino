@@ -9,12 +9,30 @@
 #include "Configuration.h"
 #include "TestTools.hpp"
 #include "VlcbCommon.h"
+#include "MockStorage.h"
 
 namespace
 {
 const int NOTFOUND = 20;
 
-void testFindInEmptyTable()
+void testLoadNVsFromZeroedEEPROM()
+{
+  // Sometimes when a module is reprogrammed the EEPROM gets zero-ed rather than getting all 0xFF.
+  // This upsets currentMode.
+  test();
+  static std::unique_ptr<MockStorage> mockStorage;
+  mockStorage.reset(new MockStorage);
+  for (unsigned int addr = 0; addr < 100; ++addr)
+  {
+    mockStorage->write(addr, 0);
+  }
+  VLCB::Configuration *configuration = createConfiguration(mockStorage.get());
+  configuration->begin();
+
+  assertEquals(VlcbModeParams::MODE_UNINITIALISED, configuration->currentMode);
+}
+
+void testFindEventInEmptyTable()
 {
   test();
   
@@ -25,7 +43,7 @@ void testFindInEmptyTable()
   assertEquals(NOTFOUND, result);
 }
 
-void testFindFound()
+void testFindEventFound()
 {
   test();
 
@@ -40,7 +58,7 @@ void testFindFound()
   assertEquals(3, result);
 }
 
-void testFindNotFound()
+void testFindEventNotFound()
 {
   test();
 
@@ -55,7 +73,7 @@ void testFindNotFound()
   assertEquals(NOTFOUND, result);
 }
 
-void testFindNotFoundWithSameHash()
+void testFindEventNotFoundWithSameHash()
 {
   test();
 
@@ -70,7 +88,7 @@ void testFindNotFoundWithSameHash()
   assertEquals(NOTFOUND, result);
 }
 
-void testFindFoundWithSameHash()
+void testFindEventFoundWithSameHash()
 {
   test();
 
@@ -89,7 +107,7 @@ void testFindFoundWithSameHash()
   assertEquals(5, result);
 }
 
-void testFindFoundWithOtherSameHash()
+void testFindEventFoundWithOtherSameHash()
 {
   test();
 
@@ -112,7 +130,7 @@ void testFindFoundWithOtherSameHash()
   assertEquals(7, result);
 }
 
-void testFindNotFoundWithOtherSameHash()
+void testFindEventNotFoundWithOtherSameHash()
 {
   test();
 
@@ -135,11 +153,12 @@ void testFindNotFoundWithOtherSameHash()
 
 void testConfiguration()
 {
-  testFindInEmptyTable();
-  testFindFound();
-  testFindNotFound();
-  testFindNotFoundWithSameHash();
-  testFindFoundWithSameHash();
-  testFindFoundWithOtherSameHash();
-  testFindNotFoundWithOtherSameHash();
+  testLoadNVsFromZeroedEEPROM();
+  testFindEventInEmptyTable();
+  testFindEventFound();
+  testFindEventNotFound();
+  testFindEventNotFoundWithSameHash();
+  testFindEventFoundWithSameHash();
+  testFindEventFoundWithOtherSameHash();
+  testFindEventNotFoundWithOtherSameHash();
 }
