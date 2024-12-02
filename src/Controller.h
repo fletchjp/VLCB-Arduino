@@ -13,10 +13,10 @@
 
 #include <Configuration.h>
 #include <Transport.h>
-#include "Service.h"
 #include "initializer_list.h"
 #include "ArrayHolder.h"
 #include "CircularBuffer.h"
+#include "Parameters.h"
 
 namespace VLCB
 {
@@ -54,6 +54,8 @@ struct Action
   };
 };
 
+class Service;
+
 //
 /// Main object in VLCB. Coordinates transport, ui, configuration and services.
 //
@@ -70,6 +72,7 @@ public:
 
   const ArrayHolder<Service *> & getServices() { return services; }
 
+  void setParams(VLCB::Parameters & params) { setParams( params.getParams()); }
   void setParams(unsigned char *mparams);
   void setParamFlag(VlcbParamFlags flag, bool set);
   unsigned char getParam(unsigned int param) { return _mparams[param]; }

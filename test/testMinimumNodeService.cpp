@@ -12,9 +12,9 @@
 // * RQNP - Done
 // * RQMN - Done
 // * RQNPN - Done
-// * RDGN - No support in MNS yet
-// * RQSD - Done - Tests done
-// * MODE - No support in MNS yet
+// * RDGN - Done
+// * RQSD - Done
+// * MODE - Done in MNS.
 // * SQU - ????
 // * NNRST - Done
 // * NNRSM - Done
@@ -23,7 +23,7 @@
 #include "TestTools.hpp"
 #include "ArduinoMock.hpp"
 #include "Controller.h"
-#include "MinimumNodeService.h"
+#include "MinimumNodeServiceWithDiagnostics.h"
 #include "LongMessageService.h"
 #include "EventConsumerService.h"
 #include "EventProducerService.h"
@@ -32,12 +32,12 @@
 
 namespace
 {
-std::unique_ptr<VLCB::MinimumNodeService> minimumNodeService;
+std::unique_ptr<VLCB::MinimumNodeServiceWithDiagnostics> minimumNodeService;
 static std::unique_ptr<MockTransportService> mockTransportService;
 
-VLCB::Controller createController()
+VLCB::Controller createController(VlcbModeParams startupMode = MODE_NORMAL)
 {
-  minimumNodeService.reset(new VLCB::MinimumNodeService);
+  minimumNodeService.reset(new VLCB::MinimumNodeServiceWithDiagnostics);
   
   mockUserInterface.reset(new MockUserInterface);
 
@@ -52,7 +52,7 @@ VLCB::Controller createController()
   static std::unique_ptr<VLCB::EventProducerService> epService;
   epService.reset(new VLCB::EventProducerService);
 
-  VLCB::Controller controller = ::createController({minimumNodeService.get(), mockUserInterface.get(),
+  VLCB::Controller controller = ::createController(startupMode, {minimumNodeService.get(), mockUserInterface.get(),
        ecService.get(), epService.get(), longMessageService.get(), mockTransportService.get()});
   controller.begin();
   minimumNodeService->setHeartBeat(false);
@@ -64,10 +64,7 @@ void testUninitializedRequestNodeNumber()
 {
   test();
 
-  VLCB::Controller controller = createController();
-
-  // Set module into Uninitialized mode:
-  minimumNodeService->setUninitialised();
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
 
   // User requests to enter Setup mode.
   controller.putAction({VLCB::ACT_CHANGE_MODE});
@@ -80,42 +77,6 @@ void testUninitializedRequestNodeNumber()
   assertEquals(0, mockTransportService->sent_messages[0].data[2]);
 
   assertEquals(MODE_SETUP, mockUserInterface->getIndicatedMode());
-  assertEquals(MODE_UNINITIALISED, configuration->currentMode);
-  assertEquals(0, configuration->nodeNum);
-}
-
-void testUninitializedRequestNodeNumberMissingSNN()
-{
-  // Send an NNACK if no SNN received within 30 seconds from RENEGOTIATE action.
-
-  test();
-
-  VLCB::Controller controller = createController();
-
-  // Set module into Uninitialized mode:
-  minimumNodeService->setUninitialised();
-
-  // User requests to enter Normal mode.
-  controller.putAction({VLCB::ACT_CHANGE_MODE});
-
-  process(controller);
-
-  assertEquals(1, mockTransportService->sent_messages.size());
-  assertEquals(OPC_RQNN, mockTransportService->sent_messages[0].data[0]);
-  assertEquals(0, mockTransportService->sent_messages[0].data[1]);
-  assertEquals(0, mockTransportService->sent_messages[0].data[2]);
-
-  assertEquals(MODE_SETUP, mockUserInterface->getIndicatedMode());
-
-  mockTransportService->sent_messages.clear();
-  addMillis(31 * 1000);
-
-  process(controller);
-
-  assertEquals(0, mockTransportService->sent_messages.size());
-  //assertEquals(OPC_NNACK, mockTransportService->sent_frames[0].data[0]);
-
-  assertEquals(MODE_UNINITIALISED, mockUserInterface->getIndicatedMode());
   assertEquals(MODE_UNINITIALISED, configuration->currentMode);
   assertEquals(0, configuration->nodeNum);
 }
@@ -127,24 +88,21 @@ void testNormalRequestNodeNumber()
   VLCB::Controller controller = createController();
 
   // User requests to enter Setup mode.
-  controller.putAction({VLCB::ACT_CHANGE_MODE});
+  controller.putAction({VLCB::ACT_RENEGOTIATE});
 
   process(controller);
 
-  assertEquals(2, mockTransportService->sent_messages.size());
-  assertEquals(OPC_NNREL, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_RQNN, mockTransportService->sent_messages[0].data[0]);
   assertEquals(0x01, mockTransportService->sent_messages[0].data[1]);
   assertEquals(0x04, mockTransportService->sent_messages[0].data[2]);
-  assertEquals(OPC_RQNN, mockTransportService->sent_messages[1].data[0]);
-  assertEquals(0x01, mockTransportService->sent_messages[1].data[1]);
-  assertEquals(0x04, mockTransportService->sent_messages[1].data[2]);
 
   assertEquals(MODE_SETUP, mockUserInterface->getIndicatedMode());
   assertEquals(MODE_NORMAL, configuration->currentMode);
   assertEquals(0x104, configuration->nodeNum);
 }
 
-void testNormalRequestNodeNumberMissingSNN()
+void testNormalChangeModeToUninitialized()
 {
   // Send an NNACK if no SNN received within 30 seconds from RENEGOTIATE action.
 
@@ -157,58 +115,37 @@ void testNormalRequestNodeNumberMissingSNN()
 
   process(controller);
 
-  assertEquals(2, mockTransportService->sent_messages.size());
+  assertEquals(1, mockTransportService->sent_messages.size());
   assertEquals(OPC_NNREL, mockTransportService->sent_messages[0].data[0]);
   assertEquals(0x01, mockTransportService->sent_messages[0].data[1]);
   assertEquals(0x04, mockTransportService->sent_messages[0].data[2]);
-  assertEquals(OPC_RQNN, mockTransportService->sent_messages[1].data[0]);
-  assertEquals(0x01, mockTransportService->sent_messages[1].data[1]);
-  assertEquals(0x04, mockTransportService->sent_messages[1].data[2]);
 
-  assertEquals(MODE_SETUP, mockUserInterface->getIndicatedMode());
-
-  mockTransportService->sent_messages.clear();
-  addMillis(31 * 1000);
-
-  process(controller);
-
-  assertEquals(1, mockTransportService->sent_messages.size());
-  assertEquals(OPC_NNACK, mockTransportService->sent_messages[0].data[0]);
-  assertEquals(0x01, mockTransportService->sent_messages[0].data[1]);
-  assertEquals(0x04, mockTransportService->sent_messages[0].data[2]);
-
-  assertEquals(MODE_NORMAL, mockUserInterface->getIndicatedMode());
-  assertEquals(MODE_NORMAL, configuration->currentMode);
-  assertEquals(0x104, configuration->nodeNum);
+  assertEquals(MODE_UNINITIALISED, mockUserInterface->getIndicatedMode());
+  assertEquals(MODE_UNINITIALISED, configuration->currentMode);
+  assertEquals(0x0, configuration->nodeNum);
 }
 
-void testReleaseNodeNumberByUI()
+void testSetupFromUninitializedReceiveRequestNodeNumberElsewhere()
 {
   test();
 
-  VLCB::Controller controller = createController();
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
+  minimumNodeService->setSetupMode();
 
-  controller.putAction({VLCB::ACT_CHANGE_MODE});
+  VLCB::VlcbMessage msg_rqsd = {3, {OPC_RQNN, 0x02, 0x07}};
+  mockTransportService->setNextMessage(msg_rqsd);
 
   process(controller);
 
-  assertEquals(2, mockTransportService->sent_messages.size());
-  assertEquals(OPC_NNREL, mockTransportService->sent_messages[0].data[0]);
-  assertEquals(0x01, mockTransportService->sent_messages[0].data[1]);
-  assertEquals(0x04, mockTransportService->sent_messages[0].data[2]);
+  // Expect module to not respond, but to change to non-setup mode.
 
-  assertEquals(OPC_RQNN, mockTransportService->sent_messages[1].data[0]);
-  assertEquals(0x01, mockTransportService->sent_messages[1].data[1]);
-  assertEquals(0x04, mockTransportService->sent_messages[1].data[2]);
+  assertEquals(0, mockTransportService->sent_messages.size());
 
-  assertEquals(MODE_SETUP, mockUserInterface->getIndicatedMode());
-  assertEquals(MODE_NORMAL, configuration->currentMode);
-
-  // Module will hold on to node number in case setup times out.
-  assertEquals(0x104, configuration->nodeNum);
+  // TODO: Need a better way of determining the instantMode.
+  assertEquals(MODE_UNINITIALISED, mockUserInterface->getIndicatedMode());
 }
 
-void testRequestNodeNumberElsewhere()
+void testSetupFromNormalReceiveRequestNodeNumberElsewhere()
 {
   test();
 
@@ -223,6 +160,46 @@ void testRequestNodeNumberElsewhere()
   // Expect module to not respond, but to change to non-setup mode.
 
   assertEquals(0, mockTransportService->sent_messages.size());
+
+  // TODO: Need a better way of determining the instantMode.
+  assertEquals(MODE_NORMAL, mockUserInterface->getIndicatedMode());
+}
+
+void testSetupFromUninitializedAbort()
+{
+  test();
+
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
+  minimumNodeService->setSetupMode();
+
+  controller.putAction({VLCB::ACT_RENEGOTIATE});
+
+  process(controller);
+
+  // Expect module to not respond, but to change to non-setup mode.
+
+  assertEquals(0, mockTransportService->sent_messages.size());
+
+  // TODO: Need a better way of determining the instantMode.
+  assertEquals(MODE_UNINITIALISED, mockUserInterface->getIndicatedMode());
+}
+
+void testSetupFromNormalAbort()
+{
+  test();
+
+  VLCB::Controller controller = createController();
+  minimumNodeService->setSetupMode();
+
+  controller.putAction({VLCB::ACT_RENEGOTIATE});
+
+  process(controller);
+
+  // Expect module to revert back to NORMAL and reclaim its node number.
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_NNACK, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(0x01, mockTransportService->sent_messages[0].data[1]);
+  assertEquals(0x04, mockTransportService->sent_messages[0].data[2]);
 
   // TODO: Need a better way of determining the instantMode.
   assertEquals(MODE_NORMAL, mockUserInterface->getIndicatedMode());
@@ -611,40 +588,268 @@ void testServiceDiscoveryShortMessage()
   assertEquals(CMDERR_INV_CMD, mockTransportService->sent_messages[0].data[5]);
 }
 
-void testModeUninitializedToSetup()
+void testRequestDiagnosticsIndexOutOfBand()
 {
   test();
 
   VLCB::Controller controller = createController();
-  minimumNodeService->setUninitialised();
 
-  VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0, 0, MODE_SETUP}};
+  VLCB::VlcbMessage msg_rqsd = {5, {OPC_RDGN, 0x01, 0x04, 7, 0}};
   mockTransportService->setNextMessage(msg_rqsd);
 
   process(controller);
 
-  assertEquals(2, mockTransportService->sent_messages.size());
+  // Verify sent messages.
+  assertEquals(1, mockTransportService->sent_messages.size());
   assertEquals(OPC_GRSP, mockTransportService->sent_messages[0].data[0]);
-  assertEquals(OPC_MODE, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(OPC_RDGN, mockTransportService->sent_messages[0].data[3]);
   assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[4]);
-  assertEquals(GRSP_OK, mockTransportService->sent_messages[0].data[5]);
-  // NN should be 0.
-
-  assertEquals(OPC_RQNN, mockTransportService->sent_messages[1].data[0]);
-  assertEquals(0, mockTransportService->sent_messages[1].data[1]);
-  assertEquals(0, mockTransportService->sent_messages[1].data[2]);
-
-  assertEquals(MODE_SETUP, mockUserInterface->getIndicatedMode());
-  assertEquals(MODE_UNINITIALISED, configuration->currentMode);
-  assertEquals(0, configuration->nodeNum);
+  assertEquals(GRSP_INVALID_SERVICE, mockTransportService->sent_messages[0].data[5]);
 }
 
-void testModeSetupToNormal()
+void testRequestDiagnosticsIndexForUI()
 {
   test();
 
   VLCB::Controller controller = createController();
-  minimumNodeService->setUninitialised();
+
+  VLCB::VlcbMessage msg_rqsd = {5, {OPC_RDGN, 0x01, 0x04, 2, 0}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  // Verify sent messages.
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_GRSP, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(OPC_RDGN, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[4]);
+  assertEquals(GRSP_INVALID_SERVICE, mockTransportService->sent_messages[0].data[5]);
+}
+
+void testRequestDiagnosticsShortMessage()
+{
+  test();
+
+  VLCB::Controller controller = createController();
+
+  VLCB::VlcbMessage msg_rqsd = {4, {OPC_RDGN, 0x01, 0x04, 1}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  // Verify sent messages.
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_GRSP, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(OPC_RDGN, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[4]);
+  assertEquals(CMDERR_INV_CMD, mockTransportService->sent_messages[0].data[5]);
+}
+
+void testRequestAllDiagnosticsIndexForMockService()
+{
+  test();
+
+  VLCB::Controller controller = createController();
+
+  // Request all diagnostics for MockCanService as it does not implement any diagnostics.
+  const byte mockServiceIndex = 6;
+  VLCB::VlcbMessage msg_rqsd = {5, {OPC_RDGN, 0x01, 0x04, mockServiceIndex, 0}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  // Verify sent messages.
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(mockServiceIndex, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(0, mockTransportService->sent_messages[0].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[0].data[5]);  
+  assertEquals(0, mockTransportService->sent_messages[0].data[6]);  
+}
+
+void testRequestInvalidDiagnosticsIndexForMockService()
+{
+  test();
+
+  VLCB::Controller controller = createController();
+
+  // Request all diagnostics for MockCanService as it does not implement any diagnostics.
+  const byte mockServiceIndex = 6;
+  VLCB::VlcbMessage msg_rqsd = {5, {OPC_RDGN, 0x01, 0x04, mockServiceIndex, 7}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  // Verify sent messages.
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_GRSP, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(OPC_RDGN, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[4]);
+  assertEquals(GRSP_INVALID_DIAGNOSTIC, mockTransportService->sent_messages[0].data[5]);
+}
+
+void testRequestAllDiagnosticsAllServices()
+{
+  test();
+
+  const byte serviceIndexMns = 1, serviceIndexEC = 3, serviceIndexEP = 4, serviceIndexLMS = 5, serviceIndexTransport = 6;
+  VLCB::Controller controller = createController();
+
+  // Request all diagnostics for MockCanService as it does not implement any diagnostics.
+  VLCB::VlcbMessage msg_rqsd = {5, {OPC_RDGN, 0x01, 0x04, 0, 0}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  // Verify sent messages.
+  assertEquals(11, mockTransportService->sent_messages.size());
+
+  int messageIndex = 0;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexMns, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(6, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexMns, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(1, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexMns, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(2, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexMns, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(3, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexMns, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(4, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexMns, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(5, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexMns, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(6, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexEC, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexEP, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexLMS, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+
+  ++messageIndex;
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[messageIndex].data[0]);
+  assertEquals(serviceIndexTransport, mockTransportService->sent_messages[messageIndex].data[3]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[5]);
+  assertEquals(0, mockTransportService->sent_messages[messageIndex].data[6]);
+}
+
+void testRequestMnsDiagnosticsUptime()
+{
+  test();
+
+  addMillis(123456789);
+
+  VLCB::Controller controller = createController();
+
+  // Request upper word of uptime
+  VLCB::VlcbMessage msg_rqsd = {5, {OPC_RDGN, 0x01, 0x04, SERVICE_ID_MNS, 2}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  // Request lower word of uptime
+  msg_rqsd = {5, {OPC_RDGN, 0x01, 0x04, SERVICE_ID_MNS, 3}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  // Verify sent messages.
+  assertEquals(2, mockTransportService->sent_messages.size());
+
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(2, mockTransportService->sent_messages[0].data[4]);
+  unsigned long uptime = (mockTransportService->sent_messages[0].data[5] << 24)
+                         + (mockTransportService->sent_messages[0].data[6] << 16);
+
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[1].data[0]);
+  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[1].data[3]);
+  assertEquals(3, mockTransportService->sent_messages[1].data[4]);
+  uptime += (mockTransportService->sent_messages[1].data[5] << 8)
+            + (mockTransportService->sent_messages[1].data[6]);
+
+  assertEquals(123456, uptime);
+}
+
+void testRequestMnsDiagnosticsNodeNumberChanges()
+{
+  test();
+
+  VLCB::Controller controller = createController();
+
+  // Change node number
+  minimumNodeService->setSetupMode();
+  VLCB::VlcbMessage msg_rqsd = {3, {OPC_SNN, 0x02, 0x07}};
+  mockTransportService->setNextMessage(msg_rqsd);
+  process(controller);
+  mockTransportService->sent_messages.clear();
+
+  // Request node number changes
+  msg_rqsd = {5, {OPC_RDGN, 0x02, 0x07, SERVICE_ID_MNS, 5}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_DGN, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(5, mockTransportService->sent_messages[0].data[4]);
+  assertEquals(0, mockTransportService->sent_messages[0].data[5]);
+  assertEquals(1, mockTransportService->sent_messages[0].data[6]);
+}
+
+void testModeSetupFromUninitializedToNormal()
+{
+  test();
+
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
   minimumNodeService->setSetupMode();
 
   VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0, 0, MODE_NORMAL}};
@@ -663,12 +868,34 @@ void testModeSetupToNormal()
   assertEquals(0, configuration->nodeNum);
 }
 
+void testModeSetupFromNormalToNormal()
+{
+  test();
+
+  VLCB::Controller controller = createController(MODE_NORMAL);
+  minimumNodeService->setSetupMode();
+
+  VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0x01, 0x04, MODE_NORMAL}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  assertEquals(1, mockTransportService->sent_messages.size());
+  assertEquals(OPC_GRSP, mockTransportService->sent_messages[0].data[0]);
+  assertEquals(OPC_MODE, mockTransportService->sent_messages[0].data[3]);
+  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[4]);
+  assertEquals(GRSP_INVALID_MODE, mockTransportService->sent_messages[0].data[5]);
+
+  assertEquals(MODE_NORMAL, mockUserInterface->getIndicatedMode());
+  assertEquals(MODE_NORMAL, configuration->currentMode);
+  assertEquals(0x104, configuration->nodeNum);
+}
+
 void testModeSetupToUnininitialized()
 {
   test();
 
-  VLCB::Controller controller = createController();
-  minimumNodeService->setUninitialised();
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
   minimumNodeService->setSetupMode();
 
   VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0, 0, MODE_UNINITIALISED}};
@@ -698,51 +925,69 @@ void testModeNormalToSetup()
 
   process(controller);
 
-  assertEquals(3, mockTransportService->sent_messages.size());
+  assertEquals(2, mockTransportService->sent_messages.size());
   assertEquals(OPC_GRSP, mockTransportService->sent_messages[0].data[0]);
   assertEquals(OPC_MODE, mockTransportService->sent_messages[0].data[3]);
   assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[4]);
   assertEquals(GRSP_OK, mockTransportService->sent_messages[0].data[5]);
   // NN should be 0.
 
-  assertEquals(OPC_NNREL, mockTransportService->sent_messages[1].data[0]);
+  assertEquals(OPC_RQNN, mockTransportService->sent_messages[1].data[0]);
   assertEquals(0x01, mockTransportService->sent_messages[1].data[1]);
   assertEquals(0x04, mockTransportService->sent_messages[1].data[2]);
-
-  assertEquals(OPC_RQNN, mockTransportService->sent_messages[2].data[0]);
-  assertEquals(0x01, mockTransportService->sent_messages[2].data[1]);
-  assertEquals(0x04, mockTransportService->sent_messages[2].data[2]);
 
   assertEquals(MODE_SETUP, mockUserInterface->getIndicatedMode());
   assertEquals(MODE_NORMAL, configuration->currentMode);
   assertEquals(0x104, configuration->nodeNum);
 }
 
-void testModeUninitializedToOtherThanSetup()
+void testModeUninitializedToSetup()
 {
   test();
 
-  VLCB::Controller controller = createController();
-  minimumNodeService->setUninitialised();
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
+
+  VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0, 0, MODE_SETUP}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  assertEquals(0, mockTransportService->sent_messages.size());
+}
+
+void testModeUninitializedToNormal()
+{
+  test();
+
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
 
   VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0, 0, MODE_NORMAL}};
   mockTransportService->setNextMessage(msg_rqsd);
 
   process(controller);
 
-  assertEquals(1, mockTransportService->sent_messages.size());
-  assertEquals(OPC_GRSP, mockTransportService->sent_messages[0].data[0]);
-  assertEquals(OPC_MODE, mockTransportService->sent_messages[0].data[3]);
-  assertEquals(SERVICE_ID_MNS, mockTransportService->sent_messages[0].data[4]);
-  assertEquals(GRSP_INVALID_MODE, mockTransportService->sent_messages[0].data[5]);
+  assertEquals(0, mockTransportService->sent_messages.size());
 }
 
-void testModeSetupToOtherThanNormal()
+void testModeUninitializedToUninitialized()
 {
   test();
 
-  VLCB::Controller controller = createController();
-  minimumNodeService->setUninitialised();
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
+
+  VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0, 0, MODE_UNINITIALISED}};
+  mockTransportService->setNextMessage(msg_rqsd);
+
+  process(controller);
+
+  assertEquals(0, mockTransportService->sent_messages.size());
+}
+
+void testModeSetupToSetup()
+{
+  test();
+
+  VLCB::Controller controller = createController(MODE_UNINITIALISED);
   minimumNodeService->setSetupMode();
 
   VLCB::VlcbMessage msg_rqsd = {4, {OPC_MODE, 0, 0, MODE_SETUP}};
@@ -799,11 +1044,12 @@ void testModeShortMessage()
 void testMinimumNodeService()
 {
   testUninitializedRequestNodeNumber();
-  testUninitializedRequestNodeNumberMissingSNN();
   testNormalRequestNodeNumber();
-  testNormalRequestNodeNumberMissingSNN();
-  testReleaseNodeNumberByUI();
-  testRequestNodeNumberElsewhere();
+  testNormalChangeModeToUninitialized();
+  testSetupFromUninitializedReceiveRequestNodeNumberElsewhere();
+  testSetupFromNormalReceiveRequestNodeNumberElsewhere();
+  testSetupFromUninitializedAbort();
+  testSetupFromNormalAbort();
   testSetNodeNumber();
   testSetNodeNumberNormal();
   testSetNodeNumberShort();
@@ -823,12 +1069,22 @@ void testMinimumNodeService()
   testServiceDiscoveryIndexOutOfBand();
   testServiceDiscoveryIndexForUI();
   testServiceDiscoveryShortMessage();
-  testModeUninitializedToSetup();
-  testModeSetupToNormal();
+  testRequestDiagnosticsIndexOutOfBand();
+  testRequestDiagnosticsIndexForUI();
+  testRequestDiagnosticsShortMessage();
+  testRequestAllDiagnosticsIndexForMockService();
+  testRequestInvalidDiagnosticsIndexForMockService();
+  testRequestAllDiagnosticsAllServices();
+  testRequestMnsDiagnosticsUptime();
+  testRequestMnsDiagnosticsNodeNumberChanges();
+  testModeSetupFromUninitializedToNormal();
+  testModeSetupFromNormalToNormal();
   testModeSetupToUnininitialized();
   testModeNormalToSetup();
-  testModeUninitializedToOtherThanSetup();
-  testModeSetupToOtherThanNormal();
+  testModeUninitializedToSetup();
+  testModeUninitializedToNormal();
+  testModeUninitializedToUninitialized();
+  testModeSetupToSetup();
   testModeNormalToNormal();
   testModeShortMessage();
 }

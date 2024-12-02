@@ -15,7 +15,6 @@ struct VlcbMessage;
 
 class EventProducerService : public Service {
 public:
-  virtual void setController(Controller *cntrl) override;
   void setRequestEventHandler(void (*fptr)(byte index, const VlcbMessage *msg));
   virtual void process(const Action * action) override;
 
@@ -39,17 +38,19 @@ public:
   
 
 private:
-  Controller *controller;
-  Configuration *module_config;  // Shortcut to reduce indirection code.
   void (*requesteventhandler)(byte index, const VlcbMessage *msg);
-
   void handleProdSvcMessage(const VlcbMessage *msg);
+  
   void setProducedEvents();
   byte createDefaultEvent(byte evValue);
   void findOrCreateEventByEv(byte evIndex, byte evValue, byte tarr[]);
   void sendMessage(VlcbMessage &msg, byte opCode, const byte *nn_en);
 
   bool uninit = false;
+  
+protected:
+  unsigned int diagEventsProduced = 0;
+
 };
 
 }  // VLCB

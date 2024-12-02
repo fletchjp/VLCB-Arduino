@@ -21,18 +21,15 @@ class CanService : public Service
 public:
   CanService(CanTransport * tpt) : canTransport(tpt) {}
 
-  virtual void setController(Controller *cntrl) override;
   virtual VlcbServiceTypes getServiceID() override { return SERVICE_ID_CAN; }
-  virtual byte getServiceVersionID() override { return 1; }
+  virtual byte getServiceVersionID() override { return 2; }
 
   virtual void process(const Action * action) override;
 
-private:
-
-  Controller *controller;
-  Configuration * module_config;  // Shortcut to reduce indirection code.
+protected:
   CanTransport * canTransport;
 
+private:
   void handleCanServiceMessage(const VlcbMessage *msg);
   void handleEnumeration(unsigned int nn);
   void handleSetCANID(const VlcbMessage *msg, unsigned int nn);

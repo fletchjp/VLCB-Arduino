@@ -20,8 +20,8 @@
 #include <Parameters.h>             // VLCB parameters
 #include <vlcbdefs.hpp>               // VLCB constants
 #include <LEDUserInterface.h>
-#include "MinimumNodeService.h"
-#include "CanService.h"
+#include "MinimumNodeServiceWithDiagnostics.h"
+#include "CanServiceWithDiagnostics.h"
 #include "SerialUserInterface.h"
 
 // constants
@@ -40,8 +40,8 @@ VLCB::Configuration modconfig;               // configuration object
 VLCB::CAN2515 can2515;                  // CAN transport object
 VLCB::LEDUserInterface ledUserInterface(LED_GRN, LED_YLW, SWITCH0);
 VLCB::SerialUserInterface serialUserInterface(&can2515);
-VLCB::MinimumNodeService mnService;
-VLCB::CanService canService(&can2515);
+VLCB::MinimumNodeServiceWithDiagnostics mnService;
+VLCB::CanServiceWithDiagnostics canService(&can2515);
 VLCB::Controller controller(&modconfig,
                             {&mnService, &ledUserInterface, &serialUserInterface, &canService}); // Controller object
 
@@ -56,13 +56,31 @@ void printConfig();
 //
 void setupVLCB()
 {
-  // set config layout parameters
-  modconfig.EE_NVS_START = 10;
-  modconfig.EE_NUM_NVS = 0;
-  modconfig.EE_EVENTS_START = 20;
-  modconfig.EE_MAX_EVENTS = 0;
-  modconfig.EE_PRODUCED_EVENTS = 0;
-  modconfig.EE_NUM_EVS = 0;
+  // set module parameters
+  VLCB::Parameters params(modconfig);
+  params.setVersion(VER_MAJ, VER_MIN, VER_BETA);
+  params.setManufacturer(MANUFACTURER);
+  params.setModuleId(MODULE_ID);  
+ 
+  // assign to Controller
+  controller.setParams(params);
+  controller.setName(mname);
+
+  // module reset - if switch is depressed at startup
+  if (ledUserInterface.isButtonPressed())
+  {
+    Serial << F("> switch was pressed at startup") << endl;
+    modconfig.resetModule();
+  }
+
+  // configure and start CAN bus and VLCB message processing
+  can2515.setNumBuffers(2, 1);      // more buffers = more memory used, fewer = less
+  can2515.setOscFreq(16000000UL);   // select the crystal frequency of the CAN module
+  can2515.setPins(10, 2);           // select pins for CAN bus CE and interrupt connections
+  if (!can2515.begin())
+  {
+    Serial << F("> error starting VLCB") << endl;
+  }
 
   // initialise and load configuration
   controller.begin();
@@ -73,34 +91,6 @@ void setupVLCB()
   // show code version and copyright notice
   printConfig();
 
-  // set module parameters
-  VLCB::Parameters params(modconfig);
-  params.setVersion(VER_MAJ, VER_MIN, VER_BETA);
-  params.setManufacturer(MANUFACTURER);
-  params.setModuleId(MODULE_ID);  
- 
-  // assign to Controller
-  controller.setParams(params.getParams());
-  controller.setName(mname);
-
-  // module reset - if switch is depressed at startup
-  if (ledUserInterface.isButtonPressed())
-  {
-    Serial << F("> switch was pressed at startup") << endl;
-    modconfig.resetModule();
-  }
-
-  // set Controller LEDs to indicate the current mode
-  controller.indicateMode(modconfig.currentMode);
-
-  // configure and start CAN bus and VLCB message processing
-  can2515.setNumBuffers(2, 1);      // more buffers = more memory used, fewer = less
-  can2515.setOscFreq(16000000UL);   // select the crystal frequency of the CAN module
-  can2515.setPins(10, 2);           // select pins for CAN bus CE and interrupt connections
-  if (!can2515.begin())
-  {
-    Serial << F("> error starting VLCB") << endl;
-  }
 }
 
 //

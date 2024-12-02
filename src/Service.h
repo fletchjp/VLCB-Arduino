@@ -16,13 +16,21 @@ struct Action;
 
 class Service
 {
+protected:
+  bool isThisNodeNumber(unsigned int nn);
+
+  Controller * controller;
+
 public:
-  virtual void setController(Controller * /*controller*/) {}
+  void setController(Controller * ctrl) { this->controller = ctrl; }
   virtual void begin() {}
   virtual VlcbServiceTypes getServiceID() = 0;
   virtual byte getServiceVersionID() = 0;
 
   virtual void process(const Action * action) = 0;
+
+  virtual void reportDiagnostics(byte serviceIndex, byte diagnosticsCode);
+  virtual void reportAllDiagnostics(byte serviceIndex);
 };
 
 }
